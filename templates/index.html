@@ -51,71 +51,72 @@ video {
     </div>
     <script src="https://cdn.socket.io/4.5.1/socket.io.min.js"></script>
     <script>
-
 const socket = io();
-
-// HTML elements
-const localVideo = document.getElementById('localVideo');
-const remoteVideo = document.getElementById('remoteVideo');
-const muteButton = document.getElementById('muteButton');
-const videoButton = document.getElementById('videoButton');
-
-// WebRTC setup
-const peerConnection = new RTCPeerConnection();
 let localStream;
+let peerConnection;
+const config = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+};
 
-// Get media stream
-navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-    .then((stream) => {
-        localStream = stream;
-        localVideo.srcObject = stream;
-        stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+// Prompt for a room ID
+const roomId = prompt("Enter room ID");
+socket.emit('join', { room: roomId });
+
+socket.on('joined', (data) => {
+  console.log(`Joined room: ${data.room}`);
+  startVideoCall();
+});
+
+// Listen for incoming signaling messages
+socket.on('signal', (data) => {
+  handleSignal(data.message);
+});
+
+function startVideoCall() {
+  // Access local media (camera and microphone)
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(stream => {
+      localStream = stream;
+      document.getElementById('localVideo').srcObject = stream;
+
+      // Create a new peer connection
+      peerConnection = new RTCPeerConnection(config);
+      peerConnection.addStream(localStream);
+
+      peerConnection.ontrack = (event) => {
+        document.getElementById('remoteVideo').srcObject = event.streams[0];
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit('signal', { room: roomId, message: { candidate: event.candidate } });
+        }
+      };
+
+      peerConnection.onnegotiationneeded = async () => {
+        // Create an offer and send it to the other peer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socket.emit('signal', { room: roomId, message: { description: peerConnection.localDescription } });
+      };
     })
-    .catch((error) => console.error('Error accessing media devices.', error));
+    .catch(console.error);
+}
 
-// Socket events
-const roomId = prompt('Enter a room ID:');
-const userId = Math.random().toString(36).substr(2, 9);
-
-socket.emit('join-room', { room: roomId, userId });
-
-socket.on('user-connected', async () => {
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.emit('signal', { room: roomId, signal: offer });
-});
-
-socket.on('signal', async (data) => {
-    if (data.signal.type === 'offer') {
-        await peerConnection.setRemoteDescription(data.signal);
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('signal', { room: roomId, signal: answer });
-    } else if (data.signal.type === 'answer') {
-        await peerConnection.setRemoteDescription(data.signal);
-    } else if (data.signal.candidate) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
+async function handleSignal(message) {
+  if (message.description) {
+    // Handle the offer or answer
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(message.description));
+    if (message.description.type === 'offer') {
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit('signal', { room: roomId, message: { description: peerConnection.localDescription } });
     }
-});
-
-peerConnection.ontrack = (event) => {
-    remoteVideo.srcObject = event.streams[0];
-};
-
-peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-        socket.emit('signal', { room: roomId, signal: event.candidate });
-    }
-};
-
-// Controls
-muteButton.addEventListener('click', () => {
-    localStream.getAudioTracks()[0].enabled = !localStream.getAudioTracks()[0].enabled;
-});
-
-videoButton.addEventListener('click', () => {
-    localStream.getVideoTracks()[0].enabled = !localStream.getVideoTracks()[0].enabled;
-});
+  } else if (message.candidate) {
+    // Handle ICE candidates
+    await peerConnection.addIceCandidate(new RTCIceCandidate(message.candidate));
+  }
+}
 
     </script>
 </body>
