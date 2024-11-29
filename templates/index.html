@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Call App</title>
+    <link rel="stylesheet">
+    <style>
+        body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #f0f0f0;
+}
+
+#container {
+    position: relative;
+    width: 80%;
+    height: 80%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+video {
+    width: 48%;
+    height: auto;
+    background: black;
+}
+
+#controls {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="localVideo" autoplay muted></video>
+        <video id="remoteVideo" autoplay></video>
+        <div id="controls">
+            <button id="muteButton">Mute</button>
+            <button id="videoButton">Video Off</button>
+        </div>
+    </div>
+    <script src="https://cdn.socket.io/4.5.1/socket.io.min.js"></script>
+    <script>
+
+const socket = io();
+
+// HTML elements
+const localVideo = document.getElementById('localVideo');
+const remoteVideo = document.getElementById('remoteVideo');
+const muteButton = document.getElementById('muteButton');
+const videoButton = document.getElementById('videoButton');
+
+// WebRTC setup
+const peerConnection = new RTCPeerConnection();
+let localStream;
+
+// Get media stream
+navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then((stream) => {
+        localStream = stream;
+        localVideo.srcObject = stream;
+        stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+    })
+    .catch((error) => console.error('Error accessing media devices.', error));
+
+// Socket events
+const roomId = prompt('Enter a room ID:');
+const userId = Math.random().toString(36).substr(2, 9);
+
+socket.emit('join-room', { room: roomId, userId });
+
+socket.on('user-connected', async () => {
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+    socket.emit('signal', { room: roomId, signal: offer });
+});
+
+socket.on('signal', async (data) => {
+    if (data.signal.type === 'offer') {
+        await peerConnection.setRemoteDescription(data.signal);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        socket.emit('signal', { room: roomId, signal: answer });
+    } else if (data.signal.type === 'answer') {
+        await peerConnection.setRemoteDescription(data.signal);
+    } else if (data.signal.candidate) {
+        peerConnection.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
+    }
+});
+
+peerConnection.ontrack = (event) => {
+    remoteVideo.srcObject = event.streams[0];
+};
+
+peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+        socket.emit('signal', { room: roomId, signal: event.candidate });
+    }
+};
+
+// Controls
+muteButton.addEventListener('click', () => {
+    localStream.getAudioTracks()[0].enabled = !localStream.getAudioTracks()[0].enabled;
+});
+
+videoButton.addEventListener('click', () => {
+    localStream.getVideoTracks()[0].enabled = !localStream.getVideoTracks()[0].enabled;
+});
+
+    </script>
+</body>
+</html>
