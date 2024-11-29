@@ -1,6 +1,13 @@
 from flask import Flask, render_template
 from flask_socketio import SocketIO
 
+import collections
+# Fix for MutableMapping in Python 3.10+
+if not hasattr(collections, "MutableMapping"):
+    import collections.abc
+    collections.MutableMapping = collections.abc.MutableMapping
+
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'raiden'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
