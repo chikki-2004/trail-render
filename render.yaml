@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: flask-socketio-app
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: gunicorn --worker-class eventlet -w 1 app:app
