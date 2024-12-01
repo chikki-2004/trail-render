@@ -3,7 +3,7 @@ from flask_socketio import SocketIO, join_room, leave_room, emit
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")  # Allow CORS for cross-origin requests
 
 @app.route('/')
 def index():
@@ -32,4 +32,5 @@ def handle_leave(data):
     emit('left', {'room': room}, room=room)
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    # Use "eventlet" or "gevent" for production as Flask-SocketIO requires it for WebSocket support
+    socketio.run(app, host='0.0.0.0', port=5000)
